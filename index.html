@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PromptCraft for QA — Turn rough intent into expert-grade test prompts</title>
+<style>
+  :root{
+    --navy:#1f2a44; --navy-2:#2c3e50; --accent:#3d5afe; --accent-2:#5c7cfa;
+    --bg:#eef1f6; --panel:#ffffff; --line:#e2e6ee; --text:#22283a; --muted:#6b7280;
+    --good:#16a34a; --warn:#d97706; --bad:#dc2626; --chip:#eef2ff; --chip-line:#c7d2fe;
+    --radius:14px; --shadow:0 6px 24px rgba(31,42,68,.08);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family:"Helvetica Neue",Arial,system-ui,sans-serif; color:var(--text);
+    background:linear-gradient(180deg,#f6f8fc,#eef1f6); min-height:100vh;
+  }
+  header.top{
+    background:linear-gradient(120deg,var(--navy),#33507a); color:#fff;
+    padding:22px 28px; box-shadow:var(--shadow);
+  }
+  header.top h1{margin:0; font-size:22px; letter-spacing:.3px}
+  header.top .tag{margin-top:4px; font-size:13px; opacity:.85}
+  header.top .pill{
+    display:inline-block; margin-top:10px; font-size:11px; background:rgba(255,255,255,.14);
+    border:1px solid rgba(255,255,255,.25); padding:3px 10px; border-radius:999px;
+  }
+  .wrap{max-width:1280px; margin:22px auto; padding:0 20px; display:grid;
+    grid-template-columns:minmax(360px,440px) 1fr; gap:20px; align-items:start;}
+  @media (max-width:940px){.wrap{grid-template-columns:1fr}}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow);}
+  .card h2{font-size:13px; text-transform:uppercase; letter-spacing:1px; color:var(--navy-2);
+    margin:0; padding:16px 18px; border-bottom:1px solid var(--line);}
+  .form{padding:16px 18px;}
+  .grp{margin-bottom:16px;}
+  .grp>label{display:block; font-size:12px; font-weight:700; color:var(--navy-2);
+    margin-bottom:6px; text-transform:uppercase; letter-spacing:.4px;}
+  .hint{font-size:11px; color:var(--muted); font-weight:400; text-transform:none; letter-spacing:0;}
+  select, input[type=text], textarea{
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px;
+    font-size:13px; font-family:inherit; background:#fbfcfe; color:var(--text); outline:none;
+  }
+  select:focus, input:focus, textarea:focus{border-color:var(--accent-2); box-shadow:0 0 0 3px rgba(92,124,250,.15)}
+  textarea{resize:vertical; min-height:78px;}
+  .chips{display:flex; flex-wrap:wrap; gap:7px;}
+  .chip{
+    display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:6px 11px;
+    border:1px solid var(--chip-line); background:var(--chip); color:var(--navy-2);
+    border-radius:999px; cursor:pointer; user-select:none; transition:.12s;
+  }
+  .chip input{position:absolute; opacity:0; width:1px; height:1px; margin:-1px; overflow:hidden; clip:rect(0 0 0 0);}
+  .chip:focus-within{box-shadow:0 0 0 3px rgba(92,124,250,.45); border-color:var(--accent);}
+  .chip.on{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .radios{display:flex; flex-wrap:wrap; gap:7px;}
+  .radio{
+    flex:1 1 46%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; cursor:pointer;
+    font-size:12px; background:#fbfcfe;
+  }
+  .radio.on{border-color:var(--accent); background:#eef2ff;}
+  .radio:focus-within{box-shadow:0 0 0 3px rgba(92,124,250,.30);}
+  .radio b{display:block; font-size:12px; color:var(--navy-2);}
+  .radio span{font-size:11px; color:var(--muted);}
+  .actions{display:flex; gap:10px; padding:0 18px 18px;}
+  button.primary{
+    flex:1; background:var(--accent); color:#fff; border:0; padding:12px; border-radius:10px;
+    font-size:14px; font-weight:700; cursor:pointer; transition:.12s;
+  }
+  button.primary:hover{background:#2f49e0}
+  button.ghost{
+    background:#fff; color:var(--navy-2); border:1px solid var(--line); padding:12px 14px;
+    border-radius:10px; font-size:13px; cursor:pointer;
+  }
+  button.ghost:hover{background:#f3f5fb}
+
+  /* Output */
+  .out-head{display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line);}
+  .out-head h2{border:0; padding:0;}
+  .score-badge{display:flex; align-items:center; gap:10px;}
+  .score-num{font-size:26px; font-weight:800; color:var(--navy);}
+  .score-num small{font-size:12px; color:var(--muted); font-weight:600}
+  .grade{font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:.5px;}
+  .tabs{display:flex; gap:4px; padding:12px 18px 0; flex-wrap:wrap;}
+  .tab{font-size:12px; padding:8px 13px; border-radius:9px 9px 0 0; cursor:pointer; color:var(--muted);
+    border:1px solid transparent; border-bottom:0;}
+  .tab.on{color:var(--navy); background:#f7f9ff; border-color:var(--line); font-weight:700;}
+  .panel{padding:16px 18px; display:none;}
+  .panel.on{display:block;}
+  pre.prompt{
+    white-space:pre-wrap; word-wrap:break-word; background:#0f1729; color:#e6edf7;
+    padding:16px; border-radius:12px; font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    font-size:12.5px; line-height:1.55; max-height:560px; overflow:auto; margin:0;
+  }
+  .copybar{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .copybar button{font-size:12.5px; padding:9px 14px; border-radius:9px; border:1px solid var(--line);
+    background:#fff; cursor:pointer; color:var(--navy-2); font-weight:600;}
+  .copybar button.solid{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .copybar button:hover{filter:brightness(.98)}
+  .why li, .checklist li{margin-bottom:9px; font-size:13px; line-height:1.5;}
+  .why b{color:var(--navy-2)}
+  .followup{background:#f7f9ff; border:1px solid var(--line); border-radius:10px; padding:11px 13px; margin-bottom:10px;}
+  .followup .fu-title{font-size:12px; font-weight:700; color:var(--navy-2); margin-bottom:5px;}
+  .followup code{display:block; font-size:12.5px; color:#334; background:#fff; border:1px dashed var(--chip-line);
+    padding:8px 10px; border-radius:8px; white-space:pre-wrap;}
+  .mini-copy{float:right; font-size:11px; border:1px solid var(--line); background:#fff; border-radius:7px;
+    padding:3px 8px; cursor:pointer; color:var(--accent); font-weight:600;}
+  .dims{list-style:none; padding:0; margin:0;}
+  .dims li{display:flex; align-items:center; gap:10px; margin-bottom:11px; font-size:12.5px;}
+  .dims .name{width:120px; font-weight:600; color:var(--navy-2);}
+  .bar{flex:1; height:9px; background:#eef1f6; border-radius:999px; overflow:hidden;}
+  .bar i{display:block; height:100%; border-radius:999px;}
+  .dims .val{width:64px; text-align:right; font-size:11px; color:var(--muted);}
+  .tip{font-size:11.5px; color:var(--muted); margin-top:2px;}
+  .empty{padding:60px 24px; text-align:center; color:var(--muted);}
+  .empty svg{opacity:.35}
+  .toast{position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--navy); color:#fff; padding:10px 18px; border-radius:10px; font-size:13px;
+    opacity:0; pointer-events:none; transition:.2s; box-shadow:var(--shadow); z-index:50;}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  footer{max-width:1280px; margin:8px auto 30px; padding:0 20px; font-size:11.5px; color:var(--muted);}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>⚡ PromptCraft for QA</h1>
+  <div class="tag">Turn rough work intent into expert-grade AI prompts — for QA &amp; Test engineers.</div>
+  <span class="pill">Login-free • Runs 100% in your browser • No data leaves this page</span>
+</header>
+
+<div class="wrap">
+  <!-- LEFT: FORM -->
+  <section class="card">
+    <h2>Guided Prompt Builder</h2>
+    <div class="form">
+      <div class="grp">
+        <label>1 · Your role</label>
+        <select id="persona">
+          <option value="QA Engineer">QA Engineer</option>
+          <option value="SDET / Automation Engineer">SDET / Automation Engineer</option>
+          <option value="Senior QA Lead" selected>Senior QA Lead</option>
+          <option value="Test Architect">Test Architect</option>
+          <option value="Performance Test Engineer">Performance Test Engineer</option>
+        </select>
+      </div>
+
+      <div class="grp">
+        <label>2 · Task / workflow</label>
+        <select id="task">
+          <option value="test-cases">PRD / story → Test cases</option>
+          <option value="test-plan">PRD → Full test strategy &amp; plan</option>
+          <option value="api-tests">API spec → API test suite</option>
+          <option value="automation">Generate automation scripts</option>
+          <option value="bug-report">Write a clean bug report</option>
+          <option value="regression">Risk-based regression plan</option>
+          <option value="release">Release readiness / go–no-go</option>
+          <option value="test-data">Test data generation</option>
+          <option value="rca">Defect RCA / root-cause analysis</option>
+        </select>
+      </div>
+
+      <div class="grp">
+        <label>3 · Feature / system name <span class="hint">(short label)</span></label>
+        <input type="text" id="feature" placeholder="e.g. Checkout — apply discount code" />
+      </div>
+
+      <div class="grp">
+        <label>4 · Context &amp; source material <span class="hint">(paste PRD, story, API spec, logs…)</span></label>
+        <textarea id="context" placeholder="Paste the requirement, acceptance criteria, API contract, or describe the feature. The more you give, the sharper the prompt."></textarea>
+      </div>
+
+      <div class="grp">
+        <label>5 · Input artifact type</label>
+        <select id="artifact">
+          <option>PRD / Requirements doc</option>
+          <option selected>User story + acceptance criteria</option>
+          <option>API spec (OpenAPI / Swagger / Postman)</option>
+          <option>Source code / diff</option>
+          <option>Logs / stack trace</option>
+          <option>Screenshot / UI description</option>
+          <option>Existing test cases</option>
+        </select>
+      </div>
+
+      <div class="grp">
+        <label>6 · Tech stack / tools <span class="hint">(optional)</span></label>
+        <input type="text" id="stack" placeholder="e.g. Playwright + TypeScript, REST, Postgres, GitHub Actions" />
+      </div>
+
+      <div class="grp">
+        <label>7 · Coverage — test types to include</label>
+        <div class="chips" id="coverage">
+          <label class="chip on"><input type="checkbox" value="Functional / positive" checked>Functional</label>
+          <label class="chip on"><input type="checkbox" value="Negative" checked>Negative</label>
+          <label class="chip on"><input type="checkbox" value="Boundary / edge" checked>Boundary</label>
+          <label class="chip"><input type="checkbox" value="Security">Security</label>
+          <label class="chip"><input type="checkbox" value="Performance">Performance</label>
+          <label class="chip"><input type="checkbox" value="Accessibility (WCAG)">Accessibility</label>
+          <label class="chip"><input type="checkbox" value="Regression">Regression</label>
+          <label class="chip"><input type="checkbox" value="Usability">Usability</label>
+          <label class="chip"><input type="checkbox" value="Integration / E2E">Integration</label>
+          <label class="chip"><input type="checkbox" value="Localization / i18n">Localization</label>
+        </div>
+      </div>
+
+      <div class="grp">
+        <label>8 · Depth</label>
+        <div class="radios" id="depth">
+          <label class="radio"><input type="radio" name="depth" value="quick"><b>Quick</b><span>Fast, high-level pass</span></label>
+          <label class="radio on"><input type="radio" name="depth" value="detailed" checked><b>Detailed</b><span>Thorough, day-to-day</span></label>
+          <label class="radio"><input type="radio" name="depth" value="production"><b>Production-grade</b><span>Rigorous, ship-ready</span></label>
+          <label class="radio"><input type="radio" name="depth" value="interview"><b>Interview-grade</b><span>Deep, first-principles</span></label>
+        </div>
+      </div>
+
+      <div class="grp">
+        <label>9 · Output format</label>
+        <select id="format">
+          <option value="table">Table (ID · Title · Steps · Expected · Priority)</option>
+          <option value="gherkin">Gherkin / BDD (Given–When–Then)</option>
+          <option value="checklist">Checklist</option>
+          <option value="jira">Jira tickets</option>
+          <option value="markdown">Structured Markdown</option>
+          <option value="code">Code (automation script)</option>
+        </select>
+      </div>
+
+      <div class="grp">
+        <label>10 · Target model</label>
+        <select id="model">
+          <option>ChatGPT (GPT-4/5)</option>
+          <option>Claude</option>
+          <option>GitHub Copilot</option>
+          <option>Gemini</option>
+        </select>
+      </div>
+
+      <div class="grp">
+        <label>11 · Safety</label>
+        <div class="chips" id="safety">
+          <label class="chip on"><input type="checkbox" value="no-secrets" checked>No secrets / credentials</label>
+          <label class="chip on"><input type="checkbox" value="anonymize" checked>Anonymize PII</label>
+          <label class="chip"><input type="checkbox" value="company-safe">Company-safe mode</label>
+        </div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="primary" id="generate">Generate expert prompt →</button>
+      <button class="ghost" id="reset">Reset</button>
+    </div>
+  </section>
+
+  <!-- RIGHT: OUTPUT -->
+  <section class="card">
+    <div class="out-head">
+      <h2>Generated Prompt</h2>
+      <div class="score-badge" id="scoreBadge" style="display:none">
+        <div class="score-num"><span id="scoreVal">0</span><small>/100</small></div>
+        <span class="grade" id="gradeChip">—</span>
+      </div>
+    </div>
+
+    <div id="emptyState" class="empty">
+      <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 4h16v12H5.2L4 17.2V4z"/><path d="M8 9h8M8 12h5"/></svg>
+      <p>Fill the form and hit <b>Generate</b>.<br/>You'll get an expert prompt, why it works, follow-ups, a validation checklist, a reusable template, and a quality score.</p>
+    </div>
+
+    <div id="result" style="display:none">
+      <div class="tabs">
+        <div class="tab on" data-t="prompt">Prompt</div>
+        <div class="tab" data-t="why">Why it works</div>
+        <div class="tab" data-t="followups">Follow-ups</div>
+        <div class="tab" data-t="checklist">Validation</div>
+        <div class="tab" data-t="template">Reusable template</div>
+        <div class="tab" data-t="score">Quality score</div>
+      </div>
+
+      <div class="panel on" data-p="prompt">
+        <pre class="prompt" id="promptText"></pre>
+        <div class="copybar">
+          <button class="solid" id="copyPrompt">📋 Copy prompt</button>
+          <button id="copyMd">Copy as Markdown</button>
+          <button id="download">⬇ Download .txt</button>
+          <button id="openModel">↗ Open in model</button>
+        </div>
+      </div>
+
+      <div class="panel" data-p="why">
+        <ul class="why" id="whyList"></ul>
+      </div>
+
+      <div class="panel" data-p="followups">
+        <div id="followList"></div>
+      </div>
+
+      <div class="panel" data-p="checklist">
+        <ul class="checklist" id="checkList"></ul>
+      </div>
+
+      <div class="panel" data-p="template">
+        <pre class="prompt" id="templateText"></pre>
+        <div class="copybar"><button class="solid" id="copyTemplate">📋 Copy template</button></div>
+      </div>
+
+      <div class="panel" data-p="score">
+        <ul class="dims" id="dimList"></ul>
+        <p class="tip" id="scoreTips"></p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<footer>PromptCraft for QA — MVP. All prompt generation is deterministic and happens locally in your browser. Nothing is sent anywhere.</footer>
+<div class="toast" id="toast">Copied!</div>
+
+<script>
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const toast = msg => { const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1400); };
+const copy = txt => navigator.clipboard.writeText(txt).then(()=>toast("Copied to clipboard"));
+
+/* chip + radio toggles — driven by `change` so mouse AND keyboard both work */
+$$(".chip").forEach(c=>{
+  const box=c.querySelector("input");
+  const sync=()=>c.classList.toggle("on",box.checked);
+  box.addEventListener("change",sync);
+  sync();
+});
+$$("#depth input").forEach(radio=>{
+  radio.addEventListener("change",()=>{
+    $$("#depth .radio").forEach(x=>x.classList.toggle("on",x.querySelector("input").checked));
+  });
+});
+
+/* ---------- task definitions ---------- */
+const TASKS = {
+  "test-cases":{
+    label:"test case design",
+    goal:"design a comprehensive set of test cases",
+    persona:"senior QA architect",
+    steps:[
+      "Identify explicit and implicit requirements, then list any assumptions and missing/ambiguous requirements before writing cases.",
+      "Derive test conditions using equivalence partitioning, boundary value analysis, decision tables, and state transitions where relevant.",
+      "For each case provide: ID, title, precondition, test data, steps, expected result, coverage type, priority (P0–P3), and automation candidate (Y/N)."
+    ],
+    extras:"Rank the top risks this feature carries and flag which cases are P0. Call out any requirement you could not test and why."
+  },
+  "test-plan":{
+    label:"test strategy & plan",
+    goal:"produce a complete, risk-based test strategy and plan",
+    persona:"QA lead / test strategist",
+    steps:[
+      "Summarize scope, in-scope/out-of-scope, and testable requirements; list assumptions and open questions.",
+      "Define test levels (unit/integration/system/E2E), test types, environments, entry/exit criteria, and required test data.",
+      "Build a risk matrix (likelihood × impact) and map coverage + effort to the highest risks. Include tooling, roles, schedule, and metrics/KPIs."
+    ],
+    extras:"Recommend what to automate vs. keep manual, and define the definition of done and release quality gates."
+  },
+  "api-tests":{
+    label:"API test suite",
+    goal:"design an API test suite from the provided contract",
+    persona:"senior API test engineer",
+    steps:[
+      "Enumerate every endpoint, method, request/response schema, auth requirement, and status codes from the spec.",
+      "For each endpoint cover: happy path, schema validation, required/optional fields, invalid payloads, auth/authorization, rate limits, idempotency, and error contracts.",
+      "Include negative and boundary inputs, and cross-endpoint workflow (contract/integration) tests."
+    ],
+    extras:"Provide ready-to-run examples (curl or Postman) and note which checks belong in a CI contract-test stage."
+  },
+  "automation":{
+    label:"automation script",
+    goal:"generate maintainable automation scripts",
+    persona:"SDET / automation engineer",
+    steps:[
+      "Use the Page Object / screenplay pattern, stable locators (role/testid over CSS/XPath), and explicit waits — no hard sleeps.",
+      "Structure tests with clear arrange–act–assert, independent test data, and no cross-test dependencies.",
+      "Include setup/teardown, meaningful assertions, and tags for smoke/regression suites."
+    ],
+    extras:"Add comments only where logic is non-obvious, and list any fixtures, env vars, or mocks the tests require."
+  },
+  "bug-report":{
+    label:"bug report",
+    goal:"write a precise, reproducible bug report",
+    persona:"detail-oriented QA engineer",
+    steps:[
+      "Produce: title, environment, preconditions, numbered steps to reproduce, expected result, actual result, and reproducibility rate.",
+      "Assess severity and priority with justification, and attach the relevant log/error evidence.",
+      "Add a short root-cause hypothesis and the smallest reproduction if possible."
+    ],
+    extras:"Flag whether this is a regression, and suggest which test case should have caught it."
+  },
+  "regression":{
+    label:"regression plan",
+    goal:"build a risk-based regression suite",
+    persona:"QA lead",
+    steps:[
+      "Map the change/impact area to affected features, dependencies, and integration points.",
+      "Select regression cases by risk and change proximity; justify inclusions and safe exclusions.",
+      "Split into smoke (P0), core regression, and full regression tiers with estimated effort."
+    ],
+    extras:"Recommend which cases to automate first for the highest ROI."
+  },
+  "release":{
+    label:"release readiness review",
+    goal:"assess release readiness and give a go/no-go recommendation",
+    persona:"QA release manager",
+    steps:[
+      "Check exit criteria: test pass rate, open defects by severity, coverage, blocked/untested areas, and known risks.",
+      "Verify non-functional gates: performance, security, accessibility, rollback plan, and monitoring/alerts.",
+      "Produce a go / no-go / conditional-go recommendation with the exact conditions and residual risks."
+    ],
+    extras:"List the top 3 risks to watch post-release and the rollback trigger."
+  },
+  "test-data":{
+    label:"test data set",
+    goal:"generate structured test data",
+    persona:"QA data engineer",
+    steps:[
+      "Cover valid, boundary, negative, and malformed values for each field, respecting constraints and formats.",
+      "Include security-relevant inputs (injection, XSS, overflow, unicode) and localization/i18n variants where relevant.",
+      "Output data in a ready-to-use format (table or JSON/CSV) with a note on what each row validates."
+    ],
+    extras:"Ensure no real PII is used — synthesize realistic-but-fake values."
+  },
+  "rca":{
+    label:"root-cause analysis",
+    goal:"perform a structured root-cause analysis",
+    persona:"QA / SRE investigator",
+    steps:[
+      "Establish the timeline, symptoms, and blast radius from the evidence provided.",
+      "Apply 5-Whys and a fishbone (people/process/tech/data) to reach the true root cause, separating triggers from causes.",
+      "Recommend corrective + preventive actions and the test/guardrail that would catch a recurrence."
+    ],
+    extras:"State confidence level and what additional data would confirm the hypothesis."
+  }
+};
+
+const DEPTH = {
+  quick:{tone:"Be concise and prioritize the highest-value items only.", n:"Focus on the ~10 most important items."},
+  detailed:{tone:"Be thorough and well-organized.", n:"Aim for comprehensive coverage without padding."},
+  production:{tone:"Be rigorous and production-grade — assume this ships to real users.", n:"Leave no critical path untested; justify prioritization."},
+  interview:{tone:"Reason from first principles and make your thinking explicit.", n:"Explain trade-offs and why each decision was made."}
+};
+
+const FORMAT = {
+  table:"a Markdown table with columns: ID | Title | Preconditions | Steps | Test Data | Expected Result | Type | Priority | Automate?",
+  gherkin:"Gherkin/BDD scenarios using Feature / Scenario / Given–When–Then, one scenario per behavior",
+  checklist:"a grouped checklist with [ ] items under clear section headings",
+  jira:"Jira-ready tickets: Summary, Description, Acceptance Criteria, Steps, Priority, Labels",
+  markdown:"clean structured Markdown with headings, tables, and bullet lists",
+  code:"runnable code in the specified stack, with brief inline comments only where logic is non-obvious"
+};
+
+const MODEL_URL = {
+  "ChatGPT (GPT-4/5)":"https://chat.openai.com/",
+  "Claude":"https://claude.ai/new",
+  "GitHub Copilot":"https://github.com/copilot",
+  "Gemini":"https://gemini.google.com/app"
+};
+
+/* ---------- read form ---------- */
+function readForm(){
+  return {
+    persona:$("#persona").value,
+    task:$("#task").value,
+    feature:$("#feature").value.trim(),
+    context:$("#context").value.trim(),
+    artifact:$("#artifact").value,
+    stack:$("#stack").value.trim(),
+    coverage:$$("#coverage input:checked").map(i=>i.value),
+    depth:$("#depth input:checked").value,
+    format:$("#format").value,
+    model:$("#model").value,
+    safety:$$("#safety input:checked").map(i=>i.value)
+  };
+}
+
+/* ---------- build prompt ---------- */
+function buildPrompt(f){
+  const t = TASKS[f.task];
+  const d = DEPTH[f.depth];
+  const feature = f.feature || "the feature described below";
+  const cov = f.coverage.length ? f.coverage.join(", ") : "functional, negative, and boundary";
+  const safetyLines = [];
+  if(f.safety.includes("no-secrets")) safetyLines.push("Never invent, request, or include real secrets, credentials, tokens, or keys.");
+  if(f.safety.includes("anonymize")) safetyLines.push("Use only anonymized / synthetic data — no real personal information (PII).");
+  if(f.safety.includes("company-safe")) safetyLines.push("Assume company-confidential context; do not reference external proprietary systems or leak internal details.");
+
+  let p = "";
+  p += `# ROLE\nYou are a ${t.persona} acting as a ${f.persona}. ${d.tone}\n\n`;
+  p += `# GOAL\nYour job is to ${t.goal} for **${feature}**.\n\n`;
+  p += `# CONTEXT\n- Artifact provided: ${f.artifact}\n`;
+  if(f.stack) p += `- Tech stack / tools: ${f.stack}\n`;
+  p += `- Coverage required: ${cov}\n`;
+  p += `- Depth: ${f.depth} — ${d.n}\n\n`;
+  p += `# INPUT\n"""\n${f.context || "[Paste the "+f.artifact+" here]"}\n"""\n\n`;
+  p += `# INSTRUCTIONS\n`;
+  t.steps.forEach((s,i)=> p += `${i+1}. ${s}\n`);
+  p += `${t.steps.length+1}. Ensure coverage across: ${cov}.\n`;
+  p += `${t.steps.length+2}. ${t.extras}\n\n`;
+  p += `# OUTPUT FORMAT\nReturn the result as ${FORMAT[f.format]}.\n\n`;
+  p += `# QUALITY BAR\n- State assumptions and missing/ambiguous requirements up front.\n- Prioritize by risk (P0–P3) and be explicit about what is NOT covered.\n- Prefer precision over verbosity; every item must be actionable and verifiable.\n\n`;
+  if(safetyLines.length){ p += `# SAFETY\n`; safetyLines.forEach(s=> p += `- ${s}\n`); p += `\n`; }
+  p += `# BEFORE YOU FINISH\nSelf-check: Did you cover every required test type? Did you list assumptions and gaps? Is each item independently verifiable? If anything is unclear in the input, ask up to 3 clarifying questions first.`;
+  return p;
+}
+
+/* ---------- reusable template ---------- */
+function buildTemplate(f){
+  const t = TASKS[f.task];
+  return `# ROLE
+You are a ${t.persona} acting as a {{ROLE}}. {{TONE}}
+
+# GOAL
+Your job is to ${t.goal} for **{{FEATURE}}**.
+
+# CONTEXT
+- Artifact provided: {{ARTIFACT_TYPE}}
+- Tech stack / tools: {{STACK}}
+- Coverage required: {{COVERAGE}}
+- Depth: {{DEPTH}}
+
+# INPUT
+"""
+{{PASTE_SOURCE_MATERIAL}}
+"""
+
+# INSTRUCTIONS
+${t.steps.map((s,i)=>`${i+1}. ${s}`).join("\n")}
+${t.steps.length+1}. Ensure coverage across: {{COVERAGE}}.
+${t.steps.length+2}. ${t.extras}
+
+# OUTPUT FORMAT
+Return the result as {{OUTPUT_FORMAT}}.
+
+# QUALITY BAR
+- State assumptions and missing requirements up front.
+- Prioritize by risk (P0–P3); be explicit about what is NOT covered.
+
+# SAFETY
+- {{SAFETY_RULES}}
+
+# BEFORE YOU FINISH
+Self-check coverage, assumptions, and gaps. Ask up to 3 clarifying questions if input is unclear.`;
+}
+
+/* ---------- why it works ---------- */
+function buildWhy(f){
+  const t=TASKS[f.task];
+  return [
+    ["Role + persona framing",`Casting the model as a <b>${t.persona}</b> (matching your <b>${f.persona}</b> level) shifts it from generic answers to expert, domain-specific reasoning.`],
+    ["Explicit goal",`A single clear objective — <b>${t.goal}</b> — stops the model from drifting or hedging.`],
+    ["Separated context &amp; input",`Delimiting the source material (""") prevents instruction/data confusion and reduces prompt-injection and hallucination risk.`],
+    ["Numbered instructions",`Ordered steps force a repeatable method (equivalence partitioning, risk ranking, etc.) instead of an ad-hoc list.`],
+    ["Coverage contract",`Naming the exact test types (<b>${(f.coverage[0]||'functional')}…</b>) makes gaps visible and the output auditable.`],
+    ["Fixed output format",`Requesting <b>${f.format}</b> output makes results paste-ready and comparable run-to-run.`],
+    ["Quality bar + self-check",`Asking the model to surface assumptions, gaps, and to self-verify catches the errors vague prompts silently ship.`]
+  ].map(x=>`<li><b>${x[0]}:</b> ${x[1]}</li>`).join("");
+}
+
+/* ---------- follow-ups ---------- */
+const FOLLOWUPS = {
+  "test-cases":[
+    ["Convert to automation","Convert the P0 and P1 test cases above into {{Playwright/Cypress/Selenium}} scripts using the Page Object pattern and stable locators."],
+    ["Find the gaps","Review the test cases you just produced and list every scenario, edge case, or negative path that is still missing."],
+    ["Traceability","Map each test case back to its requirement / acceptance criterion and show me any requirement with zero coverage."]
+  ],
+  "test-plan":[
+    ["Drill into risk","Expand the top 3 risks in the plan into detailed mitigation test scenarios."],
+    ["Effort estimate","Estimate effort (person-days) per test level and propose a 2-week execution schedule."],
+    ["Automation ROI","Recommend which parts of this plan to automate first, ranked by ROI."]
+  ],
+  "api-tests":[
+    ["Postman collection","Turn these API tests into a Postman collection with environment variables and test scripts."],
+    ["Contract tests","Which of these belong in a CI contract-testing stage? Generate them for {{tool}}."],
+    ["Negative expansion","Expand negative and security cases: auth bypass, injection, malformed payloads, rate-limit abuse."]
+  ],
+  "automation":[
+    ["Add CI","Add a GitHub Actions workflow that runs this suite on PRs with reporting and retries."],
+    ["Flake-proof","Review the script for flakiness sources (waits, locators, data coupling) and fix them."],
+    ["Data-driven","Refactor into a data-driven test reading cases from a fixture file."]
+  ],
+  "bug-report":[
+    ["Minimal repro","Reduce the steps to the smallest possible reproduction."],
+    ["Regression test","Write the test case that should have caught this bug so it can't regress."],
+    ["Triage","Suggest severity, priority, and the most likely component/owner."]
+  ],
+  "regression":[
+    ["Smoke subset","Extract a 15-minute smoke suite (P0 only) from this regression plan."],
+    ["Automate first","Rank these regression cases by automation ROI."],
+    ["Impact recheck","Given this additional code change {{diff}}, update the impacted regression scope."]
+  ],
+  "release":[
+    ["Exec summary","Summarize this readiness review into a 5-line go/no-go for leadership."],
+    ["Risk deep-dive","Expand each open risk with likelihood, impact, and a mitigation owner."],
+    ["Rollback plan","Draft a concrete rollback + monitoring plan for the top risks."]
+  ],
+  "test-data":[
+    ["As JSON/CSV","Output this data set as {{JSON/CSV}} ready to import."],
+    ["Scale up","Generate 50 more rows preserving the same edge-case distribution."],
+    ["Security set","Add a dedicated security/injection data set for these fields."]
+  ],
+  "rca":[
+    ["Prevent recurrence","Turn the corrective actions into concrete test cases and guardrails."],
+    ["5-Whys deeper","Push the 5-Whys one level deeper on the leading root cause."],
+    ["Postmortem doc","Format this into a blameless postmortem document."]
+  ]
+};
+function buildFollowups(f){
+  return (FOLLOWUPS[f.task]||[]).map(fu=>`
+    <div class="followup">
+      <button class="mini-copy" data-copy="${fu[1].replace(/"/g,'&quot;')}">copy</button>
+      <div class="fu-title">${fu[0]}</div>
+      <code>${fu[1]}</code>
+    </div>`).join("");
+}
+
+/* ---------- validation checklist ---------- */
+function buildChecklist(f){
+  const base=[
+    "Every required test type is covered (no silent gaps).",
+    "Assumptions and missing/ambiguous requirements are listed explicitly.",
+    "Each item is independently verifiable with a clear expected result.",
+    "Items are prioritized by risk (P0–P3).",
+    "Output matches the requested format and is paste-ready.",
+    "No real secrets, credentials, or PII appear anywhere."
+  ];
+  const perTask={
+    "test-cases":["Positive, negative, and boundary cases exist for each requirement.","Test data is specified, not left implicit."],
+    "api-tests":["Every endpoint + method is covered with schema and error-contract checks.","Auth/authorization and rate-limit cases included."],
+    "automation":["No hard sleeps; stable locators; tests are independent.","Setup/teardown and required fixtures are defined."],
+    "bug-report":["Steps reproduce the issue deterministically.","Severity/priority are justified with evidence."],
+    "regression":["Selection is justified by change impact and risk.","Smoke vs. full tiers are separated."],
+    "release":["All exit criteria are evaluated with real numbers.","Rollback trigger and residual risks are stated."],
+    "test-data":["Valid, boundary, negative, and malformed values present.","Only synthetic (fake) data is used."],
+    "test-plan":["Entry/exit criteria and quality gates defined.","Risk matrix maps effort to highest risks."],
+    "rca":["True root cause separated from triggers/symptoms.","Preventive test/guardrail proposed."]
+  };
+  return base.concat(perTask[f.task]||[]).map(x=>`<li>☑ ${x}</li>`).join("");
+}
+
+/* ---------- quality score ---------- */
+function scorePrompt(f){
+  const dims=[];
+  const ctxLen=f.context.length;
+  // Role clarity — the tool always sets an expert role, so this is genuinely high.
+  dims.push(["Role clarity", 100, "Persona + expert role are set."]);
+  // Context — scales with how much real source material was pasted.
+  const ctxScore = ctxLen>400?100: ctxLen>150?70: ctxLen>0?40:10;
+  dims.push(["Context", ctxScore, ctxLen>150?"Rich source material provided.":"Paste more source material (PRD / AC / spec) to sharpen the prompt."]);
+  // Input clarity — naming the feature is the real signal.
+  dims.push(["Input clarity", f.feature?100:35, f.feature?"Feature + artifact type set.":"Name the specific feature to sharpen scope."]);
+  // Constraints — reward tech stack + a focused (not exhaustive) coverage set.
+  const consScore = Math.min(100, (f.stack?50:10) + Math.min(f.coverage.length,4)*12);
+  dims.push(["Constraints", consScore, f.stack?"Tech stack + coverage set.":"Add tech stack / tools for tighter constraints."]);
+  // Output format — always explicitly defined by the tool.
+  dims.push(["Output format", 100, "Explicit output format defined."]);
+  // Validation — only meaningful when there's material to validate against.
+  const valScore = ctxLen>0?100:40;
+  dims.push(["Validation", valScore, ctxLen>0?"Self-check + assumptions built in.":"Add source material so the model has something to validate against."]);
+  // Safety
+  const safScore = Math.min(100, 20 + f.safety.length*25);
+  dims.push(["Safety", safScore, f.safety.length>=2?"Safety guards on.":"Enable more safety guards (no-secrets, anonymize)."]);
+
+  const total = Math.round(dims.reduce((a,d)=>a+d[1],0)/dims.length);
+  return {dims,total};
+}
+function gradeFor(n){
+  if(n>=85) return ["Excellent","#dcfce7","#16a34a"];
+  if(n>=70) return ["Strong","#dbeafe","#2563eb"];
+  if(n>=50) return ["Fair","#fef3c7","#d97706"];
+  return ["Needs work","#fee2e2","#dc2626"];
+}
+function barColor(v){ return v>=80?"#16a34a": v>=55?"#d97706":"#dc2626"; }
+
+/* ---------- render ---------- */
+let LAST_PROMPT="";
+function generate(){
+  const f=readForm();
+  const prompt=buildPrompt(f);
+  LAST_PROMPT=prompt;
+  $("#promptText").textContent=prompt;
+  $("#templateText").textContent=buildTemplate(f);
+  $("#whyList").innerHTML=buildWhy(f);
+  $("#followList").innerHTML=buildFollowups(f);
+  $("#checkList").innerHTML=buildChecklist(f);
+
+  const {dims,total}=scorePrompt(f);
+  $("#dimList").innerHTML=dims.map(d=>`
+    <li><span class="name">${d[0]}</span>
+      <span class="bar"><i style="width:${d[1]}%;background:${barColor(d[1])}"></i></span>
+      <span class="val">${d[1]}/100</span></li>`).join("");
+  $("#scoreTips").textContent = dims.filter(d=>d[1]<80).map(d=>d[2]).join("  ") || "Great — this prompt hits the quality bar on every dimension.";
+  $("#scoreVal").textContent=total;
+  const g=gradeFor(total);
+  const chip=$("#gradeChip"); chip.textContent=g[0]; chip.style.background=g[1]; chip.style.color=g[2];
+  $("#scoreBadge").style.display="flex";
+
+  $("#emptyState").style.display="none";
+  $("#result").style.display="block";
+}
+
+/* ---------- tabs ---------- */
+$$(".tab").forEach(tab=>tab.addEventListener("click",()=>{
+  $$(".tab").forEach(t=>t.classList.remove("on"));
+  $$(".panel").forEach(p=>p.classList.remove("on"));
+  tab.classList.add("on");
+  $(`.panel[data-p="${tab.dataset.t}"]`).classList.add("on");
+}));
+
+/* ---------- buttons ---------- */
+$("#generate").addEventListener("click",generate);
+$("#reset").addEventListener("click",()=>location.reload());
+$("#copyPrompt").addEventListener("click",()=>copy($("#promptText").textContent));
+$("#copyTemplate").addEventListener("click",()=>copy($("#templateText").textContent));
+$("#copyMd").addEventListener("click",()=>copy("```\n"+$("#promptText").textContent+"\n```"));
+$("#download").addEventListener("click",()=>{
+  const blob=new Blob([$("#promptText").textContent],{type:"text/plain"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=(readForm().feature||"qa-prompt").toLowerCase().replace(/[^a-z0-9]+/g,"-")+".txt"; a.click();
+});
+$("#openModel").addEventListener("click",()=>{
+  copy($("#promptText").textContent);
+  const url=MODEL_URL[readForm().model]||"https://chat.openai.com/";
+  toast("Prompt copied — opening model…"); setTimeout(()=>window.open(url,"_blank"),400);
+});
+document.addEventListener("click",e=>{ if(e.target.classList.contains("mini-copy")) copy(e.target.dataset.copy); });
+
+/* generate an initial example so the page isn't empty on load */
+$("#feature").value="Checkout — apply promo code at payment";
+$("#context").value="As a shopper, I can enter a promo code at checkout so that a valid discount is applied to my order total.\n\nAcceptance criteria:\n- Valid, active code applies the correct discount and updates the total.\n- Expired, invalid, or already-used codes show a clear error and do not change the total.\n- Only one code can be applied per order.\n- Discount never makes the total negative.";
+generate();
+</script>
+</body>
+</html>
