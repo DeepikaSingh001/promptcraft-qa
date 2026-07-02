@@ -4,6 +4,9 @@
 
 > 🔗 **Live app:** https://deepikasingh001.github.io/promptcraft-qa/
 
+![PromptCraft for QA — screenshot](docs/screenshot.png)
+
+
 PromptCraft for QA is a login-free, zero-build web app that turns a short guided form
 into a high-quality, structured prompt you can paste into ChatGPT, Claude, GitHub
 Copilot, or Gemini. It's not a prompt library — it's a **guided prompt composer +
